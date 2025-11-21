@@ -1,6 +1,10 @@
+/**
+ * SEO Niche Discovery System
+ * CLI entry point
+ */
+
 import { config, validateConfig } from "./config.js";
 import { runPipeline } from "./pipeline.js";
-import { mkdir } from "fs/promises";
 
 // Default seed queries for tool-based niches
 const DEFAULT_SEEDS = [
@@ -38,9 +42,6 @@ async function main() {
     console.error("\nPlease set up your .env file (see .env.example)");
     process.exit(1);
   }
-
-  // Ensure output directory exists
-  await mkdir("output", { recursive: true });
 
   // Get seeds from args or use defaults
   const customSeeds = process.argv.slice(2);

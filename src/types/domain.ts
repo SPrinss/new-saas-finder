@@ -1,4 +1,8 @@
-export interface SerpResult {
+/**
+ * Domain types for the SEO Niche Discovery application
+ */
+
+export interface SerpResultItem {
   position: number;
   url: string;
   domain: string;
@@ -14,9 +18,11 @@ export interface Keyword {
   difficultyScore: number;
   cpc: number;
   competition: number;
+  competitionLevel: "LOW" | "MEDIUM" | "HIGH" | null;
+  intent: "informational" | "navigational" | "commercial" | "transactional" | null;
 
   // SERP data
-  serpResults: SerpResult[];
+  serpResults: SerpResultItem[];
   avgCompetitorDa: number;
   hasOutdatedResults: boolean;
 
@@ -44,6 +50,18 @@ export interface PipelineResult {
   timestamp: Date;
 }
 
+export interface CostSummary {
+  totalSpent: number;
+  requestsMade: number;
+  breakdown: {
+    keywordDiscovery: number;
+    serpAnalysis: number;
+    domainMetrics: number;
+    aiScoring: number;
+  };
+}
+
+// Factory functions
 export function createKeyword(partial: Partial<Keyword> & { keyword: string }): Keyword {
   return {
     keyword: partial.keyword,
@@ -51,6 +69,8 @@ export function createKeyword(partial: Partial<Keyword> & { keyword: string }): 
     difficultyScore: partial.difficultyScore ?? 0,
     cpc: partial.cpc ?? 0,
     competition: partial.competition ?? 0,
+    competitionLevel: partial.competitionLevel ?? null,
+    intent: partial.intent ?? null,
     serpResults: partial.serpResults ?? [],
     avgCompetitorDa: partial.avgCompetitorDa ?? 0,
     hasOutdatedResults: partial.hasOutdatedResults ?? false,
@@ -61,11 +81,14 @@ export function createKeyword(partial: Partial<Keyword> & { keyword: string }): 
 
 export function passesFilters(
   kw: Keyword,
-  minVolume = 1000,
-  maxVolume = 50000,
-  maxDifficulty = 30,
-  minCpc = 1.0
+  filters: {
+    minVolume?: number;
+    maxVolume?: number;
+    maxDifficulty?: number;
+    minCpc?: number;
+  } = {}
 ): boolean {
+  const { minVolume = 1000, maxVolume = 50000, maxDifficulty = 30, minCpc = 1.0 } = filters;
   return (
     kw.monthlyVolume >= minVolume &&
     kw.monthlyVolume <= maxVolume &&
