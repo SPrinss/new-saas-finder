@@ -1,0 +1,21 @@
+# Environment
+.env
+.venv/
+venv/
+__pycache__/
+*.pyc
+
+# Output data
+output/
+results/
+
+# Keep config files but ignore output JSON
+!package.json
+!tsconfig.json
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
