@@ -5,6 +5,7 @@
 
 import { config } from "../config.js";
 import { StructuredLogger } from "../utils/structured-logger.js";
+import { promises as dns } from "dns";
 import type {
   RelatedKeywordsResponse,
   RelatedKeywordItem,
@@ -80,6 +81,83 @@ export class DataForSEOClient {
     }
   }
 
+  /**
+   * DNS warmup to resolve hostname before making requests
+   */
+  private async warmupDNS(): Promise<void> {
+    try {
+      // Extract hostname from baseUrl
+      const hostname = new URL(this.baseUrl).hostname;
+
+      // Try to resolve DNS with different orders
+      dns.setDefaultResultOrder("ipv4first");
+      await dns.lookup(hostname);
+    } catch (error) {
+      // DNS warmup failed, but continue anyway - fetch will retry
+      if (this.logger) {
+        this.logger.log("warn", "dns_warmup_failed", {
+          metadata: { error: (error as Error).message },
+        });
+      }
+    }
+  }
+
+  /**
+   * Retry helper for handling transient network/DNS errors
+   */
+  private async retryWithBackoff<T>(
+    fn: () => Promise<T>,
+    maxRetries = 4,
+    baseDelay = 2000
+  ): Promise<T> {
+    let lastError: Error | null = null;
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        // On first attempt, try DNS warmup
+        if (attempt === 0) {
+          await this.warmupDNS();
+        }
+
+        return await fn();
+      } catch (error: any) {
+        lastError = error as Error;
+
+        // Check if it's a network/DNS error that's worth retrying
+        const isNetworkError =
+          error?.cause?.code === "EAI_AGAIN" ||
+          error?.cause?.code === "ENOTFOUND" ||
+          error?.cause?.code === "ETIMEDOUT" ||
+          error?.cause?.code === "ECONNRESET" ||
+          error?.message?.includes("fetch failed");
+
+        // Don't retry on non-network errors or on last attempt
+        if (!isNetworkError || attempt === maxRetries) {
+          throw error;
+        }
+
+        // Exponential backoff: 2s, 4s, 8s, 16s
+        const delay = baseDelay * Math.pow(2, attempt);
+
+        if (this.logger) {
+          this.logger.log("warn", "network_error_retrying", {
+            metadata: {
+              attempt: attempt + 1,
+              maxRetries,
+              delay,
+              errorCode: error?.cause?.code,
+              errorMessage: error?.message,
+            },
+          });
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      }
+    }
+
+    throw lastError;
+  }
+
   private async request<T>(
     endpoint: string,
     data: unknown[],
@@ -110,30 +188,33 @@ export class DataForSEOClient {
     }
 
     try {
-      const response = await this.fetchFn(`${this.baseUrl}/${endpoint}`, {
-        method: "POST",
-        headers: {
-          Authorization: `Basic ${this.auth}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(data),
+      const result = await this.retryWithBackoff(async () => {
+        const response = await this.fetchFn(`${this.baseUrl}/${endpoint}`, {
+          method: "POST",
+          headers: {
+            Authorization: `Basic ${this.auth}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(data),
+        });
+
+        if (!response.ok) {
+          const error = new DataForSEOError(
+            `API error: ${response.status} ${response.statusText}`,
+            response.status
+          );
+          if (this.logger) {
+            this.logger.log("error", "api_request_failed", {
+              error,
+              metadata: { status: response.status, endpoint },
+            });
+          }
+          throw error;
+        }
+
+        return (await response.json()) as T;
       });
 
-      if (!response.ok) {
-        const error = new DataForSEOError(
-          `API error: ${response.status} ${response.statusText}`,
-          response.status
-        );
-        if (this.logger) {
-          this.logger.log("error", "api_request_failed", {
-            error,
-            metadata: { status: response.status, endpoint },
-          });
-        }
-        throw error;
-      }
-
-      const result = (await response.json()) as T;
       this.costTracker.add(cost);
 
       const duration = Date.now() - startTime;
