@@ -2,25 +2,25 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NicheScorer, scoringFunctions } from "./scorer.js";
 import { createKeyword, type Keyword } from "../types/domain.js";
 
-// Mock OpenAI
-vi.mock("openai", () => ({
+// Mock Anthropic
+vi.mock("@anthropic-ai/sdk", () => ({
   default: vi.fn().mockImplementation(() => ({
-    chat: {
-      completions: {
-        create: vi.fn().mockResolvedValue({
-          choices: [
-            {
-              message: {
-                content: JSON.stringify({
-                  score: 7.5,
-                  reasoning: "Good opportunity with low competition",
-                }),
-              },
-            },
-          ],
-          usage: { total_tokens: 150 },
-        }),
-      },
+    messages: {
+      create: vi.fn().mockResolvedValue({
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              score: 7.5,
+              reasoning: "Good opportunity with low competition",
+            }),
+          },
+        ],
+        usage: {
+          input_tokens: 75,
+          output_tokens: 75,
+        },
+      }),
     },
   })),
 }));
@@ -74,7 +74,7 @@ describe("NicheScorer", () => {
     it("should blend AI and rule-based scores", async () => {
       const scorer = new NicheScorer({
         useAI: true,
-        openaiApiKey: "test-key",
+        anthropicApiKey: "test-key",
       });
 
       const keyword = createKeyword({
@@ -93,7 +93,7 @@ describe("NicheScorer", () => {
     it("should track token usage", async () => {
       const scorer = new NicheScorer({
         useAI: true,
-        openaiApiKey: "test-key",
+        anthropicApiKey: "test-key",
       });
 
       const keyword = createKeyword({ keyword: "test" });

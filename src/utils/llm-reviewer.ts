@@ -4,7 +4,7 @@
  */
 
 import { readFile, readdir } from "fs/promises";
-import { OpenAI } from "openai";
+import Anthropic from "@anthropic-ai/sdk";
 import type { ModuleExecutionLog, TestExecutionLog } from "./structured-logger.js";
 
 export interface ReviewResult {
@@ -32,11 +32,11 @@ export interface ReviewResult {
 }
 
 export class LLMReviewer {
-  private openai: OpenAI | null = null;
+  private anthropic: Anthropic | null = null;
 
   constructor(apiKey?: string) {
     if (apiKey) {
-      this.openai = new OpenAI({ apiKey });
+      this.anthropic = new Anthropic({ apiKey });
     }
   }
 
@@ -69,7 +69,7 @@ export class LLMReviewer {
     let suggestions: ReviewResult["suggestions"] = [];
     let codeChanges: ReviewResult["codeChanges"] = [];
 
-    if (useAI && this.openai) {
+    if (useAI && this.anthropic) {
       const aiResult = await this.analyzeLogsWithAI(logs, analysis);
       suggestions = aiResult.suggestions;
       codeChanges = aiResult.codeChanges;
@@ -149,14 +149,14 @@ export class LLMReviewer {
   }
 
   /**
-   * AI-based analysis using GPT-4
+   * AI-based analysis using Claude
    */
   private async analyzeLogsWithAI(
     logs: ModuleExecutionLog[],
     ruleBasedAnalysis: ReviewResult["analysis"]
   ): Promise<Pick<ReviewResult, "suggestions" | "codeChanges">> {
-    if (!this.openai) {
-      throw new Error("OpenAI client not initialized");
+    if (!this.anthropic) {
+      throw new Error("Anthropic client not initialized");
     }
 
     // Prepare summary for AI (don't send full logs to save tokens)
@@ -195,7 +195,7 @@ export class LLMReviewer {
 **System Context:**
 - TypeScript/Node.js application
 - Uses DataForSEO API (paid, cost-sensitive)
-- Uses OpenAI API for scoring
+- Uses Claude (Anthropic) API for AI scoring
 - Processes keywords, analyzes SERPs, scores opportunities
 
 **Log Summary:**
@@ -234,19 +234,18 @@ Return ONLY a valid JSON object with this structure:
   ]
 }`;
 
-    const response = await this.openai.chat.completions.create({
-      model: "gpt-4o-mini",
+    const response = await this.anthropic.messages.create({
+      model: "claude-3-5-sonnet-20241022",
+      max_tokens: 4096,
       messages: [{ role: "user", content: prompt }],
-      temperature: 0.3,
-      response_format: { type: "json_object" },
     });
 
-    const content = response.choices[0].message.content;
-    if (!content) {
-      throw new Error("No response from OpenAI");
+    const content = response.content[0];
+    if (content.type !== "text") {
+      throw new Error("Unexpected response format from Claude");
     }
 
-    return JSON.parse(content);
+    return JSON.parse(content.text);
   }
 
   /**
@@ -348,7 +347,7 @@ Return ONLY a valid JSON object with this structure:
     }
 
     // AI suggestion if available
-    if (this.openai && testLog.error) {
+    if (this.anthropic && testLog.error) {
       const suggestion = await this.suggestFix(testLog);
       analysis.push("", "AI Suggestion:", suggestion);
     }
@@ -360,7 +359,7 @@ Return ONLY a valid JSON object with this structure:
    * Suggest a fix for a failed test using AI
    */
   private async suggestFix(testLog: TestExecutionLog): Promise<string> {
-    if (!this.openai) return "AI not available";
+    if (!this.anthropic) return "AI not available";
 
     const prompt = `A test failed with the following details:
 
@@ -375,14 +374,14 @@ Error: ${testLog.error?.message}
 
 Provide a concise (2-3 sentences) suggestion for fixing this test failure.`;
 
-    const response = await this.openai.chat.completions.create({
-      model: "gpt-4o-mini",
+    const response = await this.anthropic.messages.create({
+      model: "claude-3-5-haiku-20241022",
+      max_tokens: 512,
       messages: [{ role: "user", content: prompt }],
-      temperature: 0.3,
-      max_tokens: 200,
     });
 
-    return response.choices[0].message.content || "No suggestion available";
+    const content = response.content[0];
+    return content.type === "text" ? content.text : "No suggestion available";
   }
 
   /**

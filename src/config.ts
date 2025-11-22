@@ -7,8 +7,8 @@ export const config = {
     password: process.env.DATAFORSEO_PASSWORD || "",
   },
 
-  // OpenAI
-  openaiApiKey: process.env.OPENAI_API_KEY || "",
+  // Anthropic
+  anthropicApiKey: process.env.ANTHROPIC_API_KEY || "",
 
   // Reddit (optional)
   reddit: {
@@ -39,6 +39,6 @@ export function validateConfig(): string[] {
   const errors: string[] = [];
   if (!config.dataforseo.login) errors.push("DATAFORSEO_LOGIN is required");
   if (!config.dataforseo.password) errors.push("DATAFORSEO_PASSWORD is required");
-  if (!config.openaiApiKey) errors.push("OPENAI_API_KEY is required");
+  if (!config.anthropicApiKey) errors.push("ANTHROPIC_API_KEY is required");
   return errors;
 }

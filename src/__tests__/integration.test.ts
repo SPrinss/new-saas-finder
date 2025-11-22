@@ -102,7 +102,7 @@ describe("Pipeline Integration", () => {
     expect(analyzedKeywords[0].serpResults.length).toBeGreaterThan(0);
 
     // Step 3: Scoring
-    const scorer = new NicheScorer({ useAI: true, openaiApiKey: "test-key" });
+    const scorer = new NicheScorer({ useAI: true, anthropicApiKey: "test-key" });
     const opportunities = await scorer.scoreKeywords(analyzedKeywords, log);
 
     expect(opportunities.length).toBe(1);

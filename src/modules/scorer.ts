@@ -3,7 +3,7 @@
  * Scores keyword opportunities using rule-based and AI analysis
  */
 
-import OpenAI from "openai";
+import Anthropic from "@anthropic-ai/sdk";
 import { config } from "../config.js";
 import type { Keyword, NicheOpportunity } from "../types/domain.js";
 
@@ -32,27 +32,27 @@ Respond with JSON only:
 
 export interface ScorerOptions {
   useAI: boolean;
-  openaiApiKey?: string;
+  anthropicApiKey?: string;
   model?: string;
 }
 
 const DEFAULT_OPTIONS: ScorerOptions = {
   useAI: true,
-  model: "gpt-4o-mini",
+  model: "claude-3-5-haiku-20241022", // Fast and cost-effective
 };
 
 export class NicheScorer {
   private options: ScorerOptions;
-  private openai: OpenAI | null = null;
+  private anthropic: Anthropic | null = null;
   public totalTokens = 0;
 
   constructor(options: Partial<ScorerOptions> = {}) {
     this.options = { ...DEFAULT_OPTIONS, ...options };
 
     if (this.options.useAI) {
-      const apiKey = this.options.openaiApiKey ?? config.openaiApiKey;
+      const apiKey = this.options.anthropicApiKey ?? config.anthropicApiKey;
       if (apiKey) {
-        this.openai = new OpenAI({ apiKey });
+        this.anthropic = new Anthropic({ apiKey });
       }
     }
   }
@@ -102,7 +102,7 @@ export class NicheScorer {
     let aiReasoning = this.options.useAI ? "" : "Rule-based scoring only";
 
     // Get AI score if enabled and available
-    if (this.options.useAI && this.openai) {
+    if (this.options.useAI && this.anthropic) {
       try {
         const aiResult = await this.getAIScore(keyword);
         // Blend AI and rule-based scores (60% AI, 40% rule-based)
@@ -151,8 +151,8 @@ export class NicheScorer {
   private async getAIScore(
     keyword: Keyword
   ): Promise<{ score: number; reasoning: string }> {
-    if (!this.openai) {
-      throw new Error("OpenAI client not initialized");
+    if (!this.anthropic) {
+      throw new Error("Anthropic client not initialized");
     }
 
     const competitors =
@@ -174,21 +174,24 @@ export class NicheScorer {
       )
       .replace("{competitors}", competitors);
 
-    const response = await this.openai.chat.completions.create({
+    const response = await this.anthropic.messages.create({
       model: this.options.model!,
+      max_tokens: 1024,
       messages: [{ role: "user", content: prompt }],
-      response_format: { type: "json_object" },
-      max_tokens: 200,
     });
 
-    this.totalTokens += response.usage?.total_tokens ?? 0;
+    this.totalTokens += response.usage.input_tokens + response.usage.output_tokens;
 
     try {
-      const result = JSON.parse(response.choices[0].message.content || "{}");
-      return {
-        score: Math.min(10, Math.max(1, result.score ?? 5)),
-        reasoning: result.reasoning ?? "",
-      };
+      const content = response.content[0];
+      if (content.type === "text") {
+        const result = JSON.parse(content.text);
+        return {
+          score: Math.min(10, Math.max(1, result.score ?? 5)),
+          reasoning: result.reasoning ?? "",
+        };
+      }
+      return { score: 5, reasoning: "Unexpected response format" };
     } catch {
       return { score: 5, reasoning: "Failed to parse AI response" };
     }
@@ -244,8 +247,9 @@ export class NicheScorer {
   }
 
   getCostEstimate(): number {
-    // GPT-4o-mini: ~$0.15/1M input, $0.60/1M output (rough average)
-    return (this.totalTokens * 0.0003) / 1000;
+    // Claude 3.5 Haiku: $0.80/1M input, $4.00/1M output
+    // Rough average: ~$2.40/1M tokens (assuming 1:1 input:output ratio)
+    return (this.totalTokens * 0.0024) / 1000;
   }
 }
 

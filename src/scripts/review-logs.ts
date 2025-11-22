@@ -23,7 +23,7 @@ async function main() {
   console.log(`Log directory: ${logDir}`);
   console.log(`AI analysis: ${useAI ? "enabled" : "disabled"}\n`);
 
-  const reviewer = new LLMReviewer(config.openaiApiKey);
+  const reviewer = new LLMReviewer(config.anthropicApiKey);
 
   try {
     console.log("Analyzing logs...\n");
