@@ -5,6 +5,7 @@
  * Type Documentation: https://github.com/reddit-archive/reddit/wiki/JSON
  */
 
+import { StructuredLogger } from "../utils/structured-logger.js";
 import type {
   RedditOAuth2Token,
   RedditListing,
@@ -16,6 +17,7 @@ export interface RedditConfig {
   clientId: string;
   clientSecret: string;
   userAgent?: string;
+  logger?: StructuredLogger; // Optional logger for LLM inspection
 }
 
 // Simplified types for client usage (transformed from Reddit API types)
@@ -51,11 +53,19 @@ export class RedditClient {
   private accessToken: string | null = null;
   private tokenExpiry: number = 0;
   private userAgent: string;
+  private logger?: StructuredLogger;
   public fetchFn: typeof fetch = fetch; // For test injection
 
   constructor(config: RedditConfig) {
     this.config = config;
     this.userAgent = config.userAgent || "SEONicheFinder/0.1.0";
+    this.logger = config.logger;
+
+    if (this.logger) {
+      this.logger.log("info", "reddit_client_initialized", {
+        metadata: { userAgent: this.userAgent },
+      });
+    }
   }
 
   /**
@@ -103,48 +113,76 @@ export class RedditClient {
       limit?: number;
     } = {}
   ): Promise<RedditSearchResult> {
-    await this.authenticate();
+    const startTime = Date.now();
+    const { subreddit = "all", sort = "relevance", timeFilter = "year", limit = 100 } = options;
 
-    const {
-      subreddit = "all",
-      sort = "relevance",
-      timeFilter = "year",
-      limit = 100,
-    } = options;
-
-    const params = new URLSearchParams({
-      q: query,
-      sort,
-      t: timeFilter,
-      limit: limit.toString(),
-      restrict_sr: "false",
-      raw_json: "1",
-    });
-
-    const endpoint = subreddit === "all"
-      ? `https://oauth.reddit.com/search?${params}`
-      : `https://oauth.reddit.com/r/${subreddit}/search?${params}`;
-
-    const response = await this.fetchFn(endpoint, {
-      headers: {
-        Authorization: `Bearer ${this.accessToken}`,
-        "User-Agent": this.userAgent,
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error(`Reddit search failed: ${response.status} ${response.statusText}`);
+    if (this.logger) {
+      this.logger.log("info", "reddit_search_start", {
+        input: { query, subreddit, sort, timeFilter, limit },
+      });
     }
 
-    const data = (await response.json()) as RedditListing<RedditLink>;
-    const posts = data.data.children
-      .filter((child) => child.kind === "t3") // t3 = post
-      .map((child) => this.normalizePost(child.data as RedditLink));
+    try {
+      await this.authenticate();
 
-    return {
-      posts,
-      totalResults: data.data.dist || 0,
-    };
+      const params = new URLSearchParams({
+        q: query,
+        sort,
+        t: timeFilter,
+        limit: limit.toString(),
+        restrict_sr: "false",
+        raw_json: "1",
+      });
+
+      const endpoint = subreddit === "all"
+        ? `https://oauth.reddit.com/search?${params}`
+        : `https://oauth.reddit.com/r/${subreddit}/search?${params}`;
+
+      const response = await this.fetchFn(endpoint, {
+        headers: {
+          Authorization: `Bearer ${this.accessToken}`,
+          "User-Agent": this.userAgent,
+        },
+      });
+
+      if (!response.ok) {
+        const error = new Error(`Reddit search failed: ${response.status} ${response.statusText}`);
+        if (this.logger) {
+          this.logger.log("error", "reddit_search_failed", {
+            error,
+            metadata: { status: response.status, query, subreddit },
+          });
+        }
+        throw error;
+      }
+
+      const data = (await response.json()) as RedditListing<RedditLink>;
+      const posts = data.data.children
+        .filter((child) => child.kind === "t3") // t3 = post
+        .map((child) => this.normalizePost(child.data as RedditLink));
+
+      const result = {
+        posts,
+        totalResults: data.data.dist || 0,
+      };
+
+      if (this.logger) {
+        this.logger.log("info", "reddit_search_success", {
+          output: { postsFound: posts.length, totalResults: result.totalResults },
+          metadata: { duration: Date.now() - startTime, query },
+        });
+      }
+
+      return result;
+    } catch (error) {
+      if (this.logger) {
+        this.logger.log("error", "reddit_search_exception", {
+          error: error as Error,
+          metadata: { query, duration: Date.now() - startTime },
+        });
+      }
+      throw error;
+    }
   }
 
   /**

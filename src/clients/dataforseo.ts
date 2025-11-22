@@ -4,6 +4,7 @@
  */
 
 import { config } from "../config.js";
+import { StructuredLogger } from "../utils/structured-logger.js";
 import type {
   RelatedKeywordsResponse,
   RelatedKeywordItem,
@@ -49,6 +50,7 @@ export interface DataForSEOClientOptions {
   password?: string;
   maxBudget?: number;
   baseUrl?: string;
+  logger?: StructuredLogger; // Optional logger for LLM inspection
 }
 
 export class DataForSEOClient {
@@ -56,6 +58,7 @@ export class DataForSEOClient {
   private auth: string;
   private maxBudget: number;
   public costTracker = new CostTracker();
+  private logger?: StructuredLogger;
 
   // Allow injecting fetch for testing
   public fetchFn: typeof fetch = fetch;
@@ -65,9 +68,16 @@ export class DataForSEOClient {
     const password = options.password ?? config.dataforseo.password;
     this.maxBudget = options.maxBudget ?? config.maxBudget;
     this.baseUrl = options.baseUrl ?? "https://api.dataforseo.com/v3";
+    this.logger = options.logger;
 
     const creds = `${login}:${password}`;
     this.auth = Buffer.from(creds).toString("base64");
+
+    if (this.logger) {
+      this.logger.log("info", "dataforseo_client_initialized", {
+        metadata: { baseUrl: this.baseUrl, maxBudget: this.maxBudget },
+      });
+    }
   }
 
   private async request<T>(
@@ -76,27 +86,79 @@ export class DataForSEOClient {
     costKey: keyof typeof COSTS
   ): Promise<T> {
     const cost = COSTS[costKey];
+    const startTime = Date.now();
+
+    if (this.logger) {
+      this.logger.log("info", "api_request_start", {
+        input: { endpoint, costKey, estimatedCost: cost },
+        metadata: {
+          budgetRemaining: this.maxBudget - this.costTracker.totalSpent,
+          requestCount: this.costTracker.requestsMade,
+        },
+      });
+    }
+
     if (!this.costTracker.canSpend(cost, this.maxBudget)) {
-      throw new BudgetExceededError(this.costTracker.totalSpent, this.maxBudget);
+      const error = new BudgetExceededError(this.costTracker.totalSpent, this.maxBudget);
+      if (this.logger) {
+        this.logger.log("error", "budget_exceeded", {
+          error,
+          metadata: { totalSpent: this.costTracker.totalSpent, maxBudget: this.maxBudget },
+        });
+      }
+      throw error;
     }
 
-    const response = await this.fetchFn(`${this.baseUrl}/${endpoint}`, {
-      method: "POST",
-      headers: {
-        Authorization: `Basic ${this.auth}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(data),
-    });
+    try {
+      const response = await this.fetchFn(`${this.baseUrl}/${endpoint}`, {
+        method: "POST",
+        headers: {
+          Authorization: `Basic ${this.auth}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(data),
+      });
 
-    if (!response.ok) {
-      throw new DataForSEOError(`API error: ${response.status} ${response.statusText}`, response.status);
+      if (!response.ok) {
+        const error = new DataForSEOError(
+          `API error: ${response.status} ${response.statusText}`,
+          response.status
+        );
+        if (this.logger) {
+          this.logger.log("error", "api_request_failed", {
+            error,
+            metadata: { status: response.status, endpoint },
+          });
+        }
+        throw error;
+      }
+
+      const result = (await response.json()) as T;
+      this.costTracker.add(cost);
+
+      const duration = Date.now() - startTime;
+
+      if (this.logger) {
+        this.logger.log("info", "api_request_success", {
+          output: { status: "success", cost },
+          metadata: {
+            duration,
+            totalSpent: this.costTracker.totalSpent,
+            requestsMade: this.costTracker.requestsMade,
+          },
+        });
+      }
+
+      return result;
+    } catch (error) {
+      if (this.logger && !(error instanceof DataForSEOError)) {
+        this.logger.log("error", "api_request_exception", {
+          error: error as Error,
+          metadata: { endpoint, duration: Date.now() - startTime },
+        });
+      }
+      throw error;
     }
-
-    const result = (await response.json()) as T;
-    this.costTracker.add(cost);
-
-    return result;
   }
 
   async getRelatedKeywords(
