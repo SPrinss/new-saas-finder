@@ -6,13 +6,20 @@
 import { writeFile, mkdir } from "fs/promises";
 import { DataForSEOClient } from "./clients/dataforseo.js";
 import { KeywordDiscovery } from "./modules/keyword-discovery.js";
+import { TrendDiscovery } from "./modules/trend-discovery.js";
 import { SerpAnalyzer } from "./modules/serp-analyzer.js";
 import { NicheScorer } from "./modules/scorer.js";
-import type { NicheOpportunity, PipelineResult } from "./types/domain.js";
+import type { Keyword, NicheOpportunity, PipelineResult } from "./types/domain.js";
 import { config } from "./config.js";
 
 export interface PipelineOptions {
-  seeds: string[];
+  // Discovery mode
+  mode?: "seed" | "trend";
+
+  // For seed mode
+  seeds?: string[];
+
+  // Output
   outputFile?: string;
   useAI?: boolean;
   onProgress?: (message: string) => void;
@@ -20,31 +27,57 @@ export interface PipelineOptions {
 
 export async function runPipeline(options: PipelineOptions): Promise<PipelineResult> {
   const {
-    seeds,
+    mode = "seed",
+    seeds = [],
     outputFile = "output/results.json",
     useAI = true,
     onProgress = console.log,
   } = options;
 
-  onProgress("=== SEO Niche Discovery Pipeline ===\n");
+  onProgress(`=== SEO Niche Discovery Pipeline (${mode.toUpperCase()} MODE) ===\n`);
 
   const client = new DataForSEOClient();
-
-  const discovery = new KeywordDiscovery(client, {
-    maxSeedKeywords: config.limits.maxSeedKeywords,
-    maxExpandedKeywords: config.limits.maxExpandedKeywords,
-    filters: config.filters,
-  });
-
   const serpAnalyzer = new SerpAnalyzer(client, {
     maxSerpAnalyses: config.limits.maxSerpAnalyses,
   });
-
   const scorer = new NicheScorer({ useAI });
 
-  // Step 1: Expand seed keywords
-  onProgress("\n[1/3] Keyword Discovery");
-  const keywords = await discovery.expandSeedKeywords(seeds, onProgress);
+  // Step 1: Discover keywords (mode-dependent)
+  let keywords: Keyword[];
+
+  if (mode === "trend") {
+    onProgress("\n[1/3] Trend Discovery (analyzing growth patterns)");
+    const trendDiscovery = new TrendDiscovery(client);
+    const trendingKeywords = await trendDiscovery.discoverTrendingKeywords(onProgress);
+
+    // Convert to regular keywords (trend signals are preserved in the object)
+    keywords = trendingKeywords.map(({ trendSignals, ...kw }) => kw);
+
+    onProgress(`\nFound ${trendingKeywords.length} trending keywords`);
+    if (trendingKeywords.length > 0) {
+      onProgress("\nTop 5 trending:");
+      trendingKeywords.slice(0, 5).forEach((kw) => {
+        const tk = kw as any;
+        onProgress(
+          `  • ${kw.keyword} (${kw.monthlyVolume}/mo, +${tk.trendSignals?.yearlyGrowth.toFixed(0)}% YoY)`
+        );
+      });
+    }
+  } else {
+    // Seed mode
+    if (seeds.length === 0) {
+      throw new Error("Seed mode requires seeds to be provided");
+    }
+
+    onProgress("\n[1/3] Keyword Discovery (expanding seeds)");
+    const discovery = new KeywordDiscovery(client, {
+      maxSeedKeywords: config.limits.maxSeedKeywords,
+      maxExpandedKeywords: config.limits.maxExpandedKeywords,
+      filters: config.filters,
+    });
+    keywords = await discovery.expandSeedKeywords(seeds, onProgress);
+  }
+
   onProgress(`Cost so far: ${client.getCostSummary()}`);
 
   if (keywords.length === 0) {

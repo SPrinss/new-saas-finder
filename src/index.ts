@@ -43,17 +43,34 @@ async function main() {
     process.exit(1);
   }
 
-  // Get seeds from args or use defaults
-  const customSeeds = process.argv.slice(2);
-  const seeds = customSeeds.length > 0 ? customSeeds : DEFAULT_SEEDS;
+  // Parse CLI arguments
+  const args = process.argv.slice(2);
+  const mode = args.includes("--trend") ? "trend" : "seed";
 
-  console.log(`Using ${seeds.length} seed keywords\n`);
+  if (mode === "trend") {
+    console.log("\nMode: TREND DISCOVERY");
+    console.log("Discovering rising search trends with growth signals...\n");
 
-  try {
-    await runPipeline({ seeds });
-  } catch (error) {
-    console.error("\nPipeline failed:", error);
-    process.exit(1);
+    try {
+      await runPipeline({ mode: "trend" });
+    } catch (error) {
+      console.error("\nPipeline failed:", error);
+      process.exit(1);
+    }
+  } else {
+    // Seed mode
+    const customSeeds = args.filter((arg) => !arg.startsWith("--"));
+    const seeds = customSeeds.length > 0 ? customSeeds : DEFAULT_SEEDS;
+
+    console.log("\nMode: SEED EXPANSION");
+    console.log(`Using ${seeds.length} seed keywords\n`);
+
+    try {
+      await runPipeline({ mode: "seed", seeds });
+    } catch (error) {
+      console.error("\nPipeline failed:", error);
+      process.exit(1);
+    }
   }
 }
 
