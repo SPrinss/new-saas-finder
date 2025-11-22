@@ -1,0 +1,30 @@
+{
+  "name": "seo-niche-finder",
+  "version": "0.1.0",
+  "description": "Automated SEO niche discovery system",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "typecheck": "tsc --noEmit",
+    "module": "tsx src/scripts/run-module.ts",
+    "review-logs": "tsx src/scripts/review-logs.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.70.1",
+    "dotenv": "^16.4.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "@vitest/coverage-v8": "^2.1.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}
