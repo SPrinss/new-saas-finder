@@ -5,10 +5,12 @@
 
 import { writeFile, mkdir } from "fs/promises";
 import { DataForSEOClient } from "./clients/dataforseo.js";
+import { RedditClient } from "./clients/reddit.js";
 import { KeywordDiscovery } from "./modules/keyword-discovery.js";
 import { TrendDiscovery } from "./modules/trend-discovery.js";
 import { SerpAnalyzer } from "./modules/serp-analyzer.js";
 import { NicheScorer } from "./modules/scorer.js";
+import { RedditSignalDiscovery } from "./modules/reddit-signals.js";
 import type { Keyword, NicheOpportunity, PipelineResult } from "./types/domain.js";
 import { config } from "./config.js";
 
@@ -18,6 +20,9 @@ export interface PipelineOptions {
 
   // For seed mode
   seeds?: string[];
+
+  // Reddit enrichment
+  useReddit?: boolean;
 
   // Output
   outputFile?: string;
@@ -31,6 +36,7 @@ export async function runPipeline(options: PipelineOptions): Promise<PipelineRes
     seeds = [],
     outputFile = "output/results.json",
     useAI = true,
+    useReddit = false,
     onProgress = console.log,
   } = options;
 
@@ -91,13 +97,44 @@ export async function runPipeline(options: PipelineOptions): Promise<PipelineRes
   }
 
   // Step 2: Analyze SERPs
-  onProgress("\n[2/3] SERP Analysis");
+  const stepNum = useReddit ? 4 : 3;
+  onProgress(`\n[2/${stepNum}] SERP Analysis`);
   const analyzedKeywords = await serpAnalyzer.analyzeKeywords(keywords, onProgress);
   onProgress(`Cost so far: ${client.getCostSummary()}`);
 
+  // Step 2.5: Enrich with Reddit signals (optional)
+  let enrichedKeywords = analyzedKeywords;
+  if (useReddit && config.reddit.clientId && config.reddit.clientSecret) {
+    onProgress(`\n[3/${stepNum}] Reddit Signal Discovery`);
+    const redditClient = new RedditClient({
+      clientId: config.reddit.clientId,
+      clientSecret: config.reddit.clientSecret,
+    });
+    const redditDiscovery = new RedditSignalDiscovery(redditClient);
+
+    try {
+      enrichedKeywords = await redditDiscovery.enrichKeywords(
+        analyzedKeywords.slice(0, 10), // Limit to top 10 to save time
+        onProgress
+      );
+
+      // Merge enriched keywords with remaining keywords
+      if (analyzedKeywords.length > 10) {
+        enrichedKeywords = [...enrichedKeywords, ...analyzedKeywords.slice(10)];
+      }
+    } catch (error) {
+      onProgress(
+        `Reddit enrichment failed: ${error instanceof Error ? error.message : error}`
+      );
+      onProgress("Continuing without Reddit data...");
+    }
+  } else if (useReddit) {
+    onProgress("\n⚠️  Reddit credentials not configured, skipping Reddit enrichment");
+  }
+
   // Step 3: Score opportunities
-  onProgress("\n[3/3] Scoring Opportunities");
-  const opportunities = await scorer.scoreKeywords(analyzedKeywords, onProgress);
+  onProgress(`\n[${stepNum}/${stepNum}] Scoring Opportunities`);
+  const opportunities = await scorer.scoreKeywords(enrichedKeywords, onProgress);
 
   // Calculate total cost
   const totalCost = client.costTracker.totalSpent + scorer.getCostEstimate();

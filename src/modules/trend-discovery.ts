@@ -234,7 +234,11 @@ export class TrendDiscovery {
         quarterlyGrowth,
         yearlyGrowth,
         pattern,
-        volumeHistory: history,
+        volumeHistory: history.map((h) => ({
+          month: h.month,
+          year: h.year,
+          volume: h.search_volume,
+        })),
       },
     };
   }

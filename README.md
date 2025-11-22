@@ -5,6 +5,8 @@ Automated system that identifies profitable, low-competition niches for simple w
 ## Features
 
 - **🔥 NEW: Trend Discovery Mode**: Finds rising search trends automatically (no seeds needed!)
+- **🔥 NEW: Reddit Signal Discovery**: Identifies demand signals and frustration indicators from Reddit
+- **🔥 NEW: LLM-Reviewable Logging**: Run modules with structured logging that an LLM can analyze and improve
 - **Keyword Discovery**: Expands seed keywords using DataForSEO Labs API
 - **SERP Analysis**: Analyzes top 10 results for each keyword
 - **Domain Metrics**: Gets domain authority for competitors
@@ -26,6 +28,7 @@ cp .env.example .env
 3. Get API credentials:
    - **DataForSEO**: Sign up at https://dataforseo.com/ ($50 min deposit, pay-as-you-go)
    - **OpenAI**: Get API key from https://platform.openai.com/
+   - **Reddit** (optional): Create an app at https://www.reddit.com/prefs/apps (free, for frustration signal discovery)
 
 ## Usage
 
@@ -66,6 +69,59 @@ npm run dev "json formatter" "csv converter" "image resizer"
 ```
 
 **Cost:** ~$5-10 per run
+
+---
+
+### Reddit Signal Discovery (Optional Enhancement)
+
+Add real demand signals from Reddit to improve opportunity scoring:
+
+```bash
+# Enable Reddit enrichment with trend discovery
+npm run dev -- --trend --reddit
+
+# Enable Reddit enrichment with seed expansion
+npm run dev --reddit "json formatter" "csv converter"
+```
+
+**How it works:**
+1. Searches Reddit for frustration patterns ("wish there was", "X sucks", "looking for")
+2. Extracts pain points and quotes from relevant posts
+3. Enriches top 10 keywords with frustration signals
+4. Boosts opportunity scores for keywords with strong Reddit demand
+
+**Benefits:**
+- 🎯 Real user pain points (not assumptions)
+- 💬 Actual quotes you can use for marketing
+- 📈 Higher scores for validated demand
+- 🆓 Free API (no cost, just rate-limited)
+
+**Cost:** Free (Reddit API is free)
+
+---
+
+### LLM-Reviewable Logging System
+
+Run individual modules with structured logging and let an LLM analyze and suggest improvements:
+
+```bash
+# Run a module with logging
+npm run module -- trend-discovery
+
+# Review logs with AI analysis
+npm run review-logs
+
+# Review logs without AI (rule-based only, free)
+npm run review-logs --no-ai
+```
+
+**Perfect for:**
+- 🐛 Debugging module behavior
+- ⚡ Finding performance bottlenecks
+- 💰 Identifying cost optimization opportunities
+- 🤖 Getting AI-powered improvement suggestions
+
+See `LLM_REVIEW_SYSTEM.md` for complete documentation.
 
 ## Budget Estimates
 
@@ -114,13 +170,25 @@ Results are saved to `output/results.json` with:
 
 ```
 src/
-├── clients/           # API clients (DataForSEO, OpenAI)
+├── clients/           # API clients
+│   ├── dataforseo.ts       # DataForSEO API integration
+│   ├── reddit.ts           # NEW: Reddit API (OAuth2)
+│   └── openai.ts           # (via 'openai' package)
 ├── types/             # TypeScript types & interfaces
+│   ├── dataforseo.ts       # DataForSEO API types
+│   └── domain.ts           # Application domain types
 ├── modules/           # Pipeline modules
-│   ├── trend-discovery.ts    # NEW: Trend analysis
-│   ├── keyword-discovery.ts  # Seed expansion
-│   ├── serp-analyzer.ts      # SERP analysis
-│   └── scorer.ts             # Opportunity scoring
+│   ├── trend-discovery.ts      # Trend analysis with growth signals
+│   ├── keyword-discovery.ts    # Seed expansion
+│   ├── serp-analyzer.ts        # SERP analysis
+│   ├── scorer.ts               # Opportunity scoring
+│   └── reddit-signals.ts       # NEW: Reddit frustration signals
+├── utils/             # NEW: Utilities
+│   ├── structured-logger.ts    # LLM-reviewable logging
+│   └── llm-reviewer.ts         # AI-powered log analysis
+├── scripts/           # NEW: CLI tools
+│   ├── run-module.ts           # Run individual modules
+│   └── review-logs.ts          # Review execution logs
 ├── config.ts          # Configuration
 ├── pipeline.ts        # Main pipeline orchestrator
 └── index.ts           # CLI entry point

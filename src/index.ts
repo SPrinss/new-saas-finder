@@ -46,13 +46,24 @@ async function main() {
   // Parse CLI arguments
   const args = process.argv.slice(2);
   const mode = args.includes("--trend") ? "trend" : "seed";
+  const useReddit = args.includes("--reddit");
+
+  if (useReddit) {
+    console.log("🔍 Reddit Signal Discovery: ENABLED");
+    if (!config.reddit.clientId || !config.reddit.clientSecret) {
+      console.warn("⚠️  Warning: Reddit credentials not configured in .env");
+      console.warn("   Add REDDIT_CLIENT_ID and REDDIT_CLIENT_SECRET to enable Reddit enrichment\n");
+    } else {
+      console.log("✅ Reddit credentials configured\n");
+    }
+  }
 
   if (mode === "trend") {
     console.log("\nMode: TREND DISCOVERY");
     console.log("Discovering rising search trends with growth signals...\n");
 
     try {
-      await runPipeline({ mode: "trend" });
+      await runPipeline({ mode: "trend", useReddit });
     } catch (error) {
       console.error("\nPipeline failed:", error);
       process.exit(1);
@@ -66,7 +77,7 @@ async function main() {
     console.log(`Using ${seeds.length} seed keywords\n`);
 
     try {
-      await runPipeline({ mode: "seed", seeds });
+      await runPipeline({ mode: "seed", seeds, useReddit });
     } catch (error) {
       console.error("\nPipeline failed:", error);
       process.exit(1);
