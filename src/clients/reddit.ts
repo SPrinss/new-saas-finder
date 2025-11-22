@@ -1,8 +1,16 @@
 /**
  * Reddit API Client
  * Uses OAuth2 for authentication and search functionality
- * Documentation: https://www.reddit.com/dev/api/
+ * Official API Documentation: https://www.reddit.com/dev/api/
+ * Type Documentation: https://github.com/reddit-archive/reddit/wiki/JSON
  */
+
+import type {
+  RedditOAuth2Token,
+  RedditListing,
+  RedditLink,
+  RedditComment as RedditCommentType,
+} from "../types/reddit.js";
 
 export interface RedditConfig {
   clientId: string;
@@ -10,6 +18,7 @@ export interface RedditConfig {
   userAgent?: string;
 }
 
+// Simplified types for client usage (transformed from Reddit API types)
 export interface RedditPost {
   id: string;
   title: string;
@@ -35,26 +44,6 @@ export interface RedditComment {
 export interface RedditSearchResult {
   posts: RedditPost[];
   totalResults: number;
-}
-
-interface RedditAuthResponse {
-  access_token: string;
-  token_type: string;
-  expires_in: number;
-  scope: string;
-}
-
-interface RedditListingResponse {
-  kind: string;
-  data: {
-    after: string | null;
-    before: string | null;
-    children: Array<{
-      kind: string;
-      data: any;
-    }>;
-    dist: number;
-  };
 }
 
 export class RedditClient {
@@ -96,7 +85,7 @@ export class RedditClient {
       throw new Error(`Reddit auth failed: ${response.status} ${response.statusText}`);
     }
 
-    const data = (await response.json()) as RedditAuthResponse;
+    const data = (await response.json()) as RedditOAuth2Token;
     this.accessToken = data.access_token;
     // Set expiry 5 minutes before actual expiry for safety
     this.tokenExpiry = Date.now() + (data.expires_in - 300) * 1000;
@@ -147,14 +136,14 @@ export class RedditClient {
       throw new Error(`Reddit search failed: ${response.status} ${response.statusText}`);
     }
 
-    const data = (await response.json()) as RedditListingResponse;
+    const data = (await response.json()) as RedditListing<RedditLink>;
     const posts = data.data.children
       .filter((child) => child.kind === "t3") // t3 = post
-      .map((child) => this.normalizePost(child.data));
+      .map((child) => this.normalizePost(child.data as RedditLink));
 
     return {
       posts,
-      totalResults: data.data.dist,
+      totalResults: data.data.dist || 0,
     };
   }
 
@@ -264,7 +253,7 @@ export class RedditClient {
       throw new Error(`Failed to fetch comments: ${response.status}`);
     }
 
-    const data = (await response.json()) as RedditListingResponse[];
+    const data = (await response.json()) as RedditListing<RedditCommentType>[];
 
     if (!data[1] || !data[1].data || !data[1].data.children) {
       return [];
@@ -272,16 +261,16 @@ export class RedditClient {
 
     return data[1].data.children
       .filter((child) => child.kind === "t1") // t1 = comment
-      .map((child) => this.normalizeComment(child.data));
+      .map((child) => this.normalizeComment(child.data as RedditCommentType));
   }
 
-  private normalizePost(data: any): RedditPost {
+  private normalizePost(data: RedditLink): RedditPost {
     return {
-      id: data.id,
+      id: data.id || "",
       title: data.title || "",
       selftext: data.selftext || "",
       author: data.author || "[deleted]",
-      subreddit: data.subreddit,
+      subreddit: data.subreddit || "",
       score: data.score || 0,
       num_comments: data.num_comments || 0,
       created_utc: data.created_utc || 0,
@@ -290,9 +279,9 @@ export class RedditClient {
     };
   }
 
-  private normalizeComment(data: any): RedditComment {
+  private normalizeComment(data: RedditCommentType): RedditComment {
     return {
-      id: data.id,
+      id: data.id || "",
       body: data.body || "",
       author: data.author || "[deleted]",
       score: data.score || 0,
